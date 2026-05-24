@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/api/update-terminal-price", "dest": "/api/update-terminal-price.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
