@@ -1,10 +1,10 @@
 // api/update-terminal-price.js
 
-// Using global memory store
+// Using global memory store for temporary transaction states
 global.terminalDb = global.terminalDb || {};
 
 module.exports = async (req, res) => {
-    // Enable CORS
+    // Enable CORS so your frontend dashboard at gopay01 can talk to it cleanly
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -13,7 +13,7 @@ module.exports = async (req, res) => {
         return res.status(200).end();
     }
 
-    // 1. POS Terminal Updates the active balance state (POST)
+    // 1. POS Terminal Updates the active balance state (POST Request)
     if (req.method === 'POST') {
         const { merchant, amount, provider } = req.body;
         if (!merchant) {
@@ -28,7 +28,7 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
     }
 
-    // 2. Customer Scans Fixed QR -> Instantly Auto-dials (GET)
+    // 2. Customer Scans Fixed QR -> Instantly Auto-dials via Client Trigger (GET Request)
     if (req.method === 'GET') {
         const { merchant } = req.query;
         if (!merchant) {
@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
 
         const liveSession = global.terminalDb[merchant];
         
-        // Check if session exists and has a valid amount
+        // Handle case where no price was sent by cashier yet
         if (!liveSession || !liveSession.amount || liveSession.amount <= 0) {
             res.setHeader('Content-Type', 'text/html');
             return res.status(200).send(`
@@ -56,7 +56,7 @@ module.exports = async (req, res) => {
                 <body>
                     <div class="card">
                         <h2>No Active Order</h2>
-                        <p>Please ask the cashier to type the amount and tap "Show static QR" first before scanning.</p>
+                        <p>Please ask the cashier to type the amount and tap "Static QR" first before scanning.</p>
                     </div>
                 </body>
                 </html>
@@ -75,10 +75,10 @@ module.exports = async (req, res) => {
 
         const finalAmount = liveSession.amount;
 
-        // Clear the entry so it cannot be double-charged by a page refresh
+        // Clear the entry instantly so it cannot be double-scanned or re-entered on refresh
         global.terminalDb[merchant] = { amount: 0, provider: 'evc' };
 
-        // Return an automated execution page instead of using res.redirect()
+        // Return a clean automation page instead of using res.redirect()
         res.setHeader('Content-Type', 'text/html');
         return res.status(200).send(`
             <!DOCTYPE html>
@@ -102,6 +102,18 @@ module.exports = async (req, res) => {
                     <h2>Opening Payment Dialer</h2>
                     <p>Sending total amount of <strong>$${finalAmount}</strong> to your phone dialer...</p>
                     <a href="${dialString}" class="btn">Click if dialer doesn't open</a>
+                </div>
+                <script>
+                    // Instantly bounce window location directly into native phone application dialer
+                    window.location.href = "${dialString}";
+                </script>
+            </body>
+            </html>
+        `);
+    }
+
+    return res.status(405).end();
+};
                 </div>
                 <script>
                     // Instantly trigger dial app trigger on page load
