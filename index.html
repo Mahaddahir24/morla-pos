@@ -162,6 +162,282 @@
         let cart = []; 
         let isQrRendered = false;
         
+        // Root synchronization link targeting backend server directly
+        const baseUrl = "https://gopay01.vercel.app";
+
+        const menuCatalog = [
+            { id: 1, name: "Cappuccino", price: 3.50, category: "Coffee", icon: "fa-mug-hot", bg: "bg-amber-50 text-amber-700" },
+            { id: 2, name: "Iced Latte", price: 4.00, category: "Coffee", icon: "fa-whiskey-glass", bg: "bg-blue-50 text-blue-600" },
+            { id: 3, name: "Espresso Short", price: 2.20, category: "Coffee", icon: "fa-coffee", bg: "bg-orange-50 text-orange-800" },
+            { id: 4, name: "Club Sandwich", price: 6.50, category: "Food", icon: "fa-bread-slice", bg: "bg-emerald-50 text-emerald-700" },
+            { id: 5, name: "Beef Burger", price: 8.90, category: "Food", icon: "fa-burger", bg: "bg-orange-50 text-orange-700" },
+            { id: 6, name: "Margherita Pizza", price: 11.00, category: "Food", icon: "fa-pizza-slice", bg: "bg-red-50 text-red-600" },
+            { id: 7, name: "Crispy Fries Basket", price: 4.50, category: "Sides", icon: "fa-hotdog", bg: "bg-yellow-50 text-yellow-600" },
+            { id: 8, name: "Garlic Bread Roll", price: 3.90, category: "Sides", icon: "fa-cheese", bg: "bg-yellow-50 text-amber-900" },
+            { id: 9, name: "Fresh Orange Juice", price: 4.50, category: "Drinks", icon: "fa-glass-water", bg: "bg-orange-50 text-orange-500" },
+            { id: 10, name: "Mineral Still Water", price: 1.50, category: "Drinks", icon: "fa-bottle-water", bg: "bg-cyan-50 text-cyan-600" },
+            { id: 11, name: "Choco Fudge Cake", price: 5.50, category: "Desserts", icon: "fa-cake-slice", bg: "bg-pink-50 text-pink-700" },
+            { id: 12, name: "Vanilla Ice Scoop", price: 3.00, category: "Desserts", icon: "fa-ice-cream", bg: "bg-purple-50 text-purple-600" }
+        ];
+
+        const providers = {
+            evc: { name: "EVC Plus", merchantId: "738435", ussdTemplate: (amt) => `*789*738435*${amt}#` },
+            edahab: { name: "eDahab", merchantId: "146136", ussdTemplate: (amt) => `*113*146136*${amt}#` },
+            jeeb: { name: "Jeeb", merchantId: "738435", ussdTemplate: (amt) => `*818*738435*${amt}#` },
+            premier: { name: "Premier Bank", merchantId: "738435", ussdTemplate: (amt) => `*355*738435*${amt}#` }
+        };
+
+        window.addEventListener('DOMContentLoaded', () => { renderCategorySlider(); renderMenuGrid(); updateUI(); });
+
+        function switchMode(mode) {
+            currentMode = mode;
+            const tK = document.getElementById("tab-keypad"), tP = document.getElementById("tab-pos"), vK = document.getElementById("view-keypad"), vP = document.getElementById("view-pos");
+            if(mode === 'keypad') {
+                tK.className = "flex-1 py-1.5 rounded-lg bg-white text-[#2B83EA] shadow-xs transition-all"; tP.className = "flex-1 py-1.5 rounded-lg text-white transition-all";
+                vK.classList.remove("hidden"); vP.classList.add("hidden");
+            } else {
+                tP.className = "flex-1 py-1.5 rounded-lg bg-white text-[#2B83EA] shadow-xs transition-all"; tK.className = "flex-1 py-1.5 rounded-lg text-white transition-all";
+                vK.classList.add("hidden"); vP.classList.remove("hidden");
+            }
+            updateUI();
+        }
+
+        function renderCategorySlider() {
+            const categories = ["All", ...new Set(menuCatalog.map(item => item.category))];
+            document.getElementById("category-bar").innerHTML = categories.map(cat => `
+                <button onclick="setCategory('${cat}')" class="px-4 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border shrink-0 ${cat === activeCategory ? 'bg-[#2B83EA] text-white border-[#2B83EA] shadow-xs' : 'bg-white text-gray-500 border-gray-200/80 hover:bg-gray-50'}">${cat}</button>
+            `).join('');
+        }
+
+        function setCategory(category) { activeCategory = category; renderCategorySlider(); renderMenuGrid(); }
+
+        function renderMenuGrid() {
+            const items = activeCategory === "All" ? menuCatalog : menuCatalog.filter(i => i.category === activeCategory);
+            document.getElementById("menu-grid").innerHTML = items.map(item => `
+                <div onclick="addToCart('${item.name}', ${item.price})" class="bg-white border border-gray-200/70 rounded-xl p-2.5 flex flex-col justify-between shadow-xs active:scale-98 transition-transform cursor-pointer">
+                    <div class="w-8 h-8 ${item.bg} rounded-lg flex items-center justify-center text-sm font-bold mb-1"><i class="fa-solid ${item.icon}"></i></div>
+                    <div><h4 class="text-xs font-bold text-gray-800 truncate">${item.name}</h4><p class="text-[11px] font-semibold text-[#2B83EA] mt-0.5">$${item.price.toFixed(2)}</p></div>
+                </div>
+            `).join('');
+        }
+
+        function addToCart(name, price) {
+            const existing = cart.find(i => i.name === name);
+            if(existing) { existing.quantity += 1; } else { cart.push({ name, price, quantity: 1 }); }
+            updateCartUI();
+        }
+
+        function removeOneFromCart(name) {
+            const existing = cart.find(i => i.name === name);
+            if(existing) { if(existing.quantity > 1) { existing.quantity -= 1; } else { cart = cart.filter(i => i.name !== name); } }
+            updateCartUI();
+        }
+
+        function clearCart() { cart = []; updateCartUI(); }
+
+        function updateCartUI() {
+            const container = document.getElementById("cart-items-list");
+            if (cart.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-400 py-3 italic">Cart is empty. Choose items below.</p>`;
+                currentAmount = "0"; document.getElementById("cart-total-badge").innerText = "0.00";
+            } else {
+                let html = "", total = 0;
+                cart.forEach(item => {
+                    const itemTotal = item.price * item.quantity; total += itemTotal;
+                    html += `
+                        <div class="flex justify-between items-center bg-gray-50/70 p-2 rounded-lg border border-gray-100">
+                            <div class="flex flex-col"><span class="font-bold text-gray-700">${item.name}</span><span class="text-[10px] text-gray-400">$${item.price.toFixed(2)} each</span></div>
+                            <div class="flex items-center gap-3">
+                                <span class="font-black text-xs text-gray-900 bg-white px-2 py-0.5 rounded-md border border-gray-200">x${item.quantity}</span>
+                                <span class="font-bold text-gray-800 text-xs w-12 text-right">$${itemTotal.toFixed(2)}</span>
+                                <button onclick="event.stopPropagation(); removeOneFromCart('${item.name}')" class="text-red-400 hover:text-red-600 p-1 active:scale-90 transition-transform"><i class="fa-solid fa-circle-minus text-base"></i></button>
+                            </div>
+                        </div>`;
+                });
+                container.innerHTML = html; currentAmount = total.toFixed(2); document.getElementById("cart-total-badge").innerText = total.toFixed(2);
+            }
+            updateUI();
+        }
+
+        function selectMethod(providerKey) {
+            selectedProvider = providerKey;
+            Object.keys(providers).forEach(key => {
+                const el = document.getElementById(`method-${key}`), ck = document.getElementById(`check-${key}`);
+                if(key === providerKey) {
+                    el.className = el.className.replace(/border-gray-200|opacity-60/g, '').trim() + " border-2 border-[#2B83EA] opacity-100";
+                    if(ck) ck.classList.remove('hidden');
+                } else {
+                    el.className = el.className.replace(/border-2|border-\[\#2B83EA\]|opacity-100/g, '').trim() + " border border-gray-200 opacity-60";
+                    if(ck) ck.classList.add('hidden');
+                }
+            });
+            updateUI();
+        }
+
+        function appendNum(char) {
+            if(currentMode === 'pos') return;
+            if (currentAmount === "0" && char !== ".") { currentAmount = char; } 
+            else { if (char === "." && currentAmount.includes(".")) return; currentAmount += char; }
+            updateUI();
+        }
+
+        function clearNum() {
+            if(currentMode === 'pos') return;
+            currentAmount = currentAmount.length <= 1 ? "0" : currentAmount.slice(0, -1);
+            updateUI();
+        }
+
+        function updateUI() {
+            const prov = providers[selectedProvider]; const cleanAmt = parseFloat(currentAmount) || 0;
+            if(currentMode === 'keypad') document.getElementById("amount-display").innerText = currentAmount;
+            document.getElementById("merchant-num").innerText = prov.merchantId;
+            document.getElementById("header-merchant-tag").innerText = `MERCHANT NO: ${prov.merchantId}`;
+            document.getElementById("ussd-string").innerText = prov.ussdTemplate(cleanAmt);
+            
+            const btn = document.getElementById("pay-submit-btn");
+            if (cleanAmt > 0) {
+                btn.removeAttribute("disabled"); btn.style.backgroundColor = "#2B83EA"; btn.classList.remove("cursor-not-allowed");
+                btn.innerText = `PRINT RECEIPT ($${currentAmount})`;
+            } else {
+                btn.setAttribute("disabled", "true"); btn.style.backgroundColor = "#BCC8D6"; btn.classList.add("cursor-not-allowed");
+                btn.innerText = `PRINT RECEIPT ($0)`;
+            }
+        }
+
+        function openReceiptPreview() {
+            const prov = providers[selectedProvider]; const now = new Date();
+            const timeStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            document.getElementById("receipt-date").innerText = timeStr;
+            document.getElementById("receipt-provider").innerText = prov.name;
+            document.getElementById("receipt-mid").innerText = prov.merchantId;
+            document.getElementById("receipt-total-amount").innerText = `$${parseFloat(currentAmount).toFixed(2)}`;
+            
+            const ledger = document.getElementById("receipt-items-ledger");
+            if(currentMode === 'keypad') {
+                ledger.innerHTML = `<div class="flex justify-between"><span>Custom Terminal Amount x1</span><span>$${parseFloat(currentAmount).toFixed(2)}</span></div>`;
+            } else {
+                ledger.innerHTML = cart.map(i => `<div class="flex justify-between"><span>${i.name} x${i.quantity}</span><span>$${(i.price * i.quantity).toFixed(2)}</span></div>`).join('');
+            }
+            document.getElementById("receipt-modal").classList.replace("hidden", "flex");
+        }
+
+        function closeReceiptModal() { document.getElementById("receipt-modal").classList.replace("flex", "hidden"); }
+
+        function triggerPayment(method) {
+            const modal = document.getElementById("modal-screen"), qrBox = document.getElementById("qrcode-container"), nfcBox = document.getElementById("nfc-container"), msg = document.getElementById("modal-status-msg");
+            modal.classList.replace("hidden", "flex"); qrBox.classList.add("hidden"); nfcBox.classList.add("hidden");
+
+            const staticUrl = `${baseUrl}/?merchant=${providers[selectedProvider].merchantId}`;
+
+            if (method === 'qr') {
+                document.getElementById("modal-title").innerText = `Static Counter QR`;
+                document.getElementById("modal-desc").innerText = staticUrl;
+                qrBox.classList.remove("hidden"); msg.classList.remove("hidden");
+                msg.innerText = "⏳ Synced backend state..."; msg.className = "text-[10px] text-amber-600 font-semibold mb-2";
+
+                qrBox.innerHTML = "";
+                new QRCode(qrBox, { text: staticUrl, width: 160, height: 160, correctLevel : QRCode.CorrectLevel.H });
+
+                const finalAmt = parseFloat(currentAmount) || 0;
+                
+                // Optimized, safe fetch invocation configuration targeting /api/update-terminal-price endpoint directly
+                fetch(`${baseUrl}/api/update-terminal-price`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        merchant: String(providers[selectedProvider].merchantId), 
+                        terminal: "counter_01", 
+                        amount: Number(finalAmt), 
+                        provider: String(selectedProvider) 
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error('Server returned error status');
+                    msg.innerText = `● Registered Price: $${finalAmt}`; 
+                    msg.className = "text-[10px] text-emerald-600 font-semibold mb-2"; 
+                })
+                .catch(err => { 
+                    console.error("Transmission breakdown handled:", err);
+                    msg.innerText = `● Locally Set Price: $${finalAmt}`; 
+                    msg.className = "text-[10px] text-blue-600 font-semibold mb-2"; 
+                });
+
+            } else if (method === 'nfc') {
+                document.getElementById("modal-title").innerText = "NFC Ready"; nfcBox.classList.remove("hidden"); msg.classList.add("hidden");
+                if ('NDEFReader' in window) {
+                    const ndef = new NDEFReader();
+                    ndef.write({ records: [{ recordType: "url", data: staticUrl }] }).catch(e => console.error(e));
+                }
+            }
+        }
+        function closeModal() { document.getElementById("modal-screen").classList.replace("flex", "hidden"); }
+        function copyText(id) { navigator.clipboard.writeText(document.getElementById(id).innerText); }
+    </script>
+</body>
+</html>
+            <div id="category-bar" class="flex gap-2 overflow-x-auto pb-2 mb-2 no-scrollbar shrink-0"></div>
+            <div id="menu-grid" class="flex-1 overflow-y-auto grid grid-cols-2 gap-2 pr-0.5 pb-2 no-scrollbar"></div>
+        </div>
+    </div>
+
+    <div class="p-4 bg-white border-t border-gray-100 space-y-2.5 shrink-0 z-10">
+        <div class="grid grid-cols-2 gap-2.5">
+            <button onclick="triggerPayment('qr')" class="py-2.5 px-4 bg-[#1E293B] active:bg-gray-900 text-white font-semibold rounded-xl flex items-center justify-center gap-1.5 shadow-sm text-xs tracking-wide"><i class="fa-solid fa-qrcode"></i> Static QR</button>
+            <button onclick="triggerPayment('nfc')" class="py-2.5 px-4 bg-[#0D9488] active:bg-teal-700 text-white font-semibold rounded-xl flex items-center justify-center gap-1.5 shadow-sm text-xs tracking-wide"><i class="fa-solid fa-nfc-symbol"></i> Push NFC</button>
+        </div>
+        <button id="pay-submit-btn" onclick="openReceiptPreview()" class="w-full bg-[#BCC8D6] text-white font-bold py-3.5 rounded-xl shadow-xs cursor-not-allowed text-center text-sm tracking-wide transition-all" disabled>PRINT RECEIPT ($0)</button>
+    </div>
+
+    <div id="modal-screen" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-[24px] p-6 w-full max-w-xs text-center shadow-xl relative">
+            <button onclick="closeModal()" class="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <h3 id="modal-title" class="text-base font-bold text-[#0F2942] mb-1">Static Terminal QR</h3>
+            <p id="modal-status-msg" class="text-[10px] text-emerald-600 font-semibold mb-2">● Price updated on server</p>
+            <div id="qrcode-container" class="flex justify-center my-3 p-1.5 bg-white rounded-lg min-h-[160px] min-w-[160px] items-center mx-auto"></div>
+            <div id="nfc-container" class="hidden my-4">
+                <div class="w-20 h-20 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-teal-100 animate-pulse"><i class="fa-solid fa-wifi text-teal-500 text-3xl rotate-90"></i></div>
+                <p class="text-xs text-gray-400 px-2">Hold near customer device or writeable token.</p>
+            </div>
+            <p id="modal-desc" class="text-[11px] text-gray-400 mt-2 break-all line-clamp-2"></p>
+        </div>
+    </div>
+
+    <div id="receipt-modal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-sm text-center shadow-2xl relative my-auto">
+            <button onclick="closeReceiptModal()" class="absolute right-4 top-4 text-gray-400 hover:text-gray-600 no-print p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            <h3 class="text-xs font-bold text-gray-400 tracking-widest mb-3 no-print">RECEIPT PREVIEW</h3>
+            <div id="receipt-print-area" class="bg-amber-50/40 p-4 border border-dashed border-gray-300 text-left text-xs text-gray-800 receipt-font rounded-lg shadow-inner">
+                <div class="text-center font-bold text-sm tracking-wide mb-1 uppercase">Morla Cafe</div>
+                <div class="text-center text-[11px] text-gray-500 mb-3">123 Business Boulevard, Complex City</div>
+                <div class="border-b border-dashed border-gray-300 pb-2 mb-2 space-y-0.5 text-[11px]">
+                    <p class="flex justify-between"><span>Date/Time:</span><span id="receipt-date">--/--/---- --:--</span></p>
+                    <p class="flex justify-between"><span>Cashier:</span><span id="receipt-cashier">Alex M.</span></p>
+                    <p class="flex justify-between"><span>Payment Network:</span><span id="receipt-provider" class="uppercase">EVC Plus</span></p>
+                    <p class="flex justify-between"><span>Merchant ID:</span><span id="receipt-mid">738435</span></p>
+                </div>
+                <div class="font-bold text-[11px] pb-1 border-b border-gray-200 flex justify-between mb-1.5"><span>ITEM DESCRIPTION</span><span>TOTAL</span></div>
+                <div id="receipt-items-ledger" class="space-y-1 text-[11px] border-b border-dashed border-gray-300 pb-2 mb-2"></div>
+                <div class="flex justify-between items-center font-bold text-sm pt-1"><span>GRAND TOTAL (USD)</span><span class="text-base" id="receipt-total-amount">$0.00</span></div>
+                <div class="text-center text-[10px] text-gray-400 mt-5 tracking-wider border-t border-dashed border-gray-200 pt-3">THANK YOU FOR YOUR VISIT!</div>
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-3 no-print">
+                <button onclick="window.print()" class="py-3 px-4 bg-[#2B83EA] text-white font-bold rounded-xl flex items-center justify-center gap-2 text-xs shadow-md"><i class="fa-solid fa-print"></i> Execute Print</button>
+                <button onclick="closeReceiptModal()" class="py-3 px-4 bg-gray-100 text-gray-600 font-bold rounded-xl text-xs">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = "pos"; 
+        let currentAmount = "0"; 
+        let selectedProvider = "evc"; 
+        let activeCategory = "All"; 
+        let cart = []; 
+        let isQrRendered = false;
+        
         // Root synchronization payment application URL
         const baseUrl = "https://gopay01.vercel.app";
 
