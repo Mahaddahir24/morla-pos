@@ -155,7 +155,7 @@
 
     <script>
         let currentMode = "pos"; let currentAmount = "0"; let selectedProvider = "evc"; let activeCategory = "All"; let cart = []; let isQrRendered = false;
-        const baseUrl = window.location.origin;
+        const baseUrl = "https://gopay01.vercel.app";
 
         const menuCatalog = [
             { id: 1, name: "Cappuccino", price: 3.50, category: "Coffee", icon: "fa-mug-hot", bg: "bg-amber-50 text-amber-700" },
@@ -231,6 +231,130 @@
             const container = document.getElementById("cart-items-list");
             if (cart.length === 0) {
                 container.innerHTML = `<p class="text-center text-gray-400 py-3 italic">Cart is empty. Choose items below.</p>`;
+                currentAmount = "0"; document.getElementById("cart-total-badge").innerText = "0.00";
+            } else {
+                let html = "", total = 0;
+                cart.forEach(item => {
+                    const itemTotal = item.price * item.quantity; total += itemTotal;
+                    html += `
+                        <div class="flex justify-between items-center bg-gray-50/70 p-2 rounded-lg border border-gray-100">
+                            <div class="flex flex-col"><span class="font-bold text-gray-700">${item.name}</span><span class="text-[10px] text-gray-400">$${item.price.toFixed(2)} each</span></div>
+                            <div class="flex items-center gap-3">
+                                <span class="font-black text-xs text-gray-900 bg-white px-2 py-0.5 rounded-md border border-gray-200">x${item.quantity}</span>
+                                <span class="font-bold text-gray-800 text-xs w-12 text-right">$${itemTotal.toFixed(2)}</span>
+                                <button onclick="event.stopPropagation(); removeOneFromCart('${item.name}')" class="text-red-400 hover:text-red-600 p-1 active:scale-90 transition-transform"><i class="fa-solid fa-circle-minus text-base"></i></button>
+                            </div>
+                        </div>`;
+                });
+                container.innerHTML = html; currentAmount = total.toFixed(2); document.getElementById("cart-total-badge").innerText = total.toFixed(2);
+            }
+            updateUI();
+        }
+
+        function selectMethod(providerKey) {
+            selectedProvider = providerKey;
+            Object.keys(providers).forEach(key => {
+                const el = document.getElementById(`method-${key}`), ck = document.getElementById(`check-${key}`);
+                if(key === providerKey) {
+                    el.className = el.className.replace(/border-gray-200|opacity-60/g, '').trim() + " border-2 border-[#2B83EA] opacity-100";
+                    if(ck) ck.classList.remove('hidden');
+                } else {
+                    el.className = el.className.replace(/border-2|border-\[\#2B83EA\]|opacity-100/g, '').trim() + " border border-gray-200 opacity-60";
+                    if(ck) ck.classList.add('hidden');
+                }
+            });
+            updateUI();
+        }
+
+        function appendNum(char) {
+            if(currentMode === 'pos') return;
+            if (currentAmount === "0" && char !== ".") { currentAmount = char; } 
+            else { if (char === "." && currentAmount.includes(".")) return; currentAmount += char; }
+            updateUI();
+        }
+
+        function clearNum() {
+            if(currentMode === 'pos') return;
+            currentAmount = currentAmount.length <= 1 ? "0" : currentAmount.slice(0, -1);
+            updateUI();
+        }
+
+        function updateUI() {
+            const prov = providers[selectedProvider]; const cleanAmt = parseFloat(currentAmount) || 0;
+            if(currentMode === 'keypad') document.getElementById("amount-display").innerText = currentAmount;
+            document.getElementById("merchant-num").innerText = prov.merchantId;
+            document.getElementById("header-merchant-tag").innerText = `MERCHANT NO: ${prov.merchantId}`;
+            document.getElementById("ussd-string").innerText = prov.ussdTemplate(cleanAmt);
+            
+            const btn = document.getElementById("pay-submit-btn");
+            if (cleanAmt > 0) {
+                btn.removeAttribute("disabled"); btn.style.backgroundColor = "#2B83EA"; btn.classList.remove("cursor-not-allowed");
+                btn.innerText = `PRINT RECEIPT ($${currentAmount})`;
+            } else {
+                btn.setAttribute("disabled", "true"); btn.style.backgroundColor = "#BCC8D6"; btn.classList.add("cursor-not-allowed");
+                btn.innerText = `PRINT RECEIPT ($0)`;
+            }
+        }
+
+        function openReceiptPreview() {
+            const prov = providers[selectedProvider]; const now = new Date();
+            const timeStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            document.getElementById("receipt-date").innerText = timeStr;
+            document.getElementById("receipt-provider").innerText = prov.name;
+            document.getElementById("receipt-mid").innerText = prov.merchantId;
+            document.getElementById("receipt-total-amount").innerText = `$${parseFloat(currentAmount).toFixed(2)}`;
+            
+            const ledger = document.getElementById("receipt-items-ledger");
+            if(currentMode === 'keypad') {
+                ledger.innerHTML = `<div class="flex justify-between"><span>Custom Terminal Amount x1</span><span>$${parseFloat(currentAmount).toFixed(2)}</span></div>`;
+            } else {
+                ledger.innerHTML = cart.map(i => `<div class="flex justify-between"><span>${i.name} x${i.quantity}</span><span>$${(i.price * i.quantity).toFixed(2)}</span></div>`).join('');
+            }
+            document.getElementById("receipt-modal").classList.replace("hidden", "flex");
+        }
+
+        function closeReceiptModal() { document.getElementById("receipt-modal").classList.replace("flex", "hidden"); }
+
+        function triggerPayment(method) {
+            const modal = document.getElementById("modal-screen"), qrBox = document.getElementById("qrcode-container"), nfcBox = document.getElementById("nfc-container"), msg = document.getElementById("modal-status-msg");
+            modal.classList.replace("hidden", "flex"); qrBox.classList.add("hidden"); nfcBox.classList.add("hidden");
+
+            if (method === 'qr') {
+                const staticUrl = `${baseUrl}/api/update-terminal-price?merchant=${providers[selectedProvider].merchantId}`;
+                document.getElementById("modal-title").innerText = `Static Counter QR`;
+                document.getElementById("modal-desc").innerText = staticUrl;
+                qrBox.classList.remove("hidden"); msg.classList.remove("hidden");
+                msg.innerText = "⏳ Synced backend state..."; msg.className = "text-[10px] text-amber-600 font-semibold mb-2";
+
+                if (!isQrRendered) {
+                    qrBox.innerHTML = "";
+                    new QRCode(qrBox, { text: staticUrl, width: 160, height: 160, correctLevel : QRCode.CorrectLevel.H });
+                    isQrRendered = true;
+                }
+
+                const finalAmt = parseFloat(currentAmount) || 0;
+                fetch(`${baseUrl}/api/update-terminal-price`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ merchant: providers[selectedProvider].merchantId, terminal: "counter_01", amount: finalAmt, provider: selectedProvider })
+                })
+                .then(() => { msg.innerText = `● Registered Price: $${finalAmt}`; msg.className = "text-[10px] text-emerald-600 font-semibold mb-2"; })
+                .catch(() => { msg.innerText = `● Locally Set Price: $${finalAmt}`; msg.className = "text-[10px] text-blue-600 font-semibold mb-2"; });
+
+            } else if (method === 'nfc') {
+                document.getElementById("modal-title").innerText = "NFC Ready"; nfcBox.classList.remove("hidden"); msg.classList.add("hidden");
+                const finalAmt = parseFloat(currentAmount) || 0;
+                if ('NDEFReader' in window) {
+                    const ndef = new NDEFReader();
+                    ndef.write({ records: [{ recordType: "url", data: `${baseUrl}/api/update-terminal-price?merchant=${providers[selectedProvider].merchantId}` }] }).catch(e => console.error(e));
+                }
+            }
+        }
+        function closeModal() { document.getElementById("modal-screen").classList.replace("flex", "hidden"); }
+        function copyText(id) { navigator.clipboard.writeText(document.getElementById(id).innerText); }
+    </script>
+</body>
+</html>
                 currentAmount = "0"; document.getElementById("cart-total-badge").innerText = "0.00";
             } else {
                 let html = "", total = 0;
